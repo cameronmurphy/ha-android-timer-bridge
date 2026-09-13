@@ -2,7 +2,7 @@
 agp = "9.4.0"
 # Must track the Kotlin that AGP bundles — 9.3.2 ships 2.4.10. Bumping one without the
 # other fails the build with a Compose compiler version mismatch.
-kotlin = "2.4.10"
+kotlin = "2.4.20"
 activityCompose = "1.13.0"
 composeBom = "2026.08.00"
 coreKtx = "1.19.0"
