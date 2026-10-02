@@ -5,6 +5,8 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+      time: '06:00'
+      timezone: 'Australia/Melbourne'
     open-pull-requests-limit: 20
 
   # The root build.gradle.kts holds the Android Gradle plugin and Kotlin versions; app/ holds
@@ -20,4 +22,6 @@ updates:
       - '/app'
     schedule:
       interval: 'weekly'
+      time: '06:00'
+      timezone: 'Australia/Melbourne'
     open-pull-requests-limit: 20
