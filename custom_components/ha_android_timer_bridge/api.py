@@ -81,3 +81,23 @@ async def async_unpair(
                 _LOGGER.debug("unpair returned HTTP %s", response.status)
     except (aiohttp.ClientError, TimeoutError) as err:
         _LOGGER.debug("could not unpair from %s:%s: %s", host, port, err)
+
+
+async def async_stop(
+    session: aiohttp.ClientSession, host: str, port: int, code: str
+) -> int:
+    """Press Stop on any timer ringing on the tablet. Returns how many were stopped."""
+    try:
+        async with session.post(
+            f"{base_url(host, port)}/stop", json={"code": code}, timeout=TIMEOUT
+        ) as response:
+            if response.status == 403:
+                raise BridgeError("tablet rejected the pairing code; pair it again")
+            if response.status != 200:
+                raise BridgeError(f"tablet returned HTTP {response.status}")
+            payload = await response.json(content_type=None)
+    except aiohttp.ClientError as err:
+        raise BridgeError(f"cannot reach tablet at {host}:{port}") from err
+    except TimeoutError as err:
+        raise BridgeError(f"tablet at {host}:{port} timed out") from err
+    return int(payload.get("stopped", 0))

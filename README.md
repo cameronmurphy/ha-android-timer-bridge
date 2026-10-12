@@ -31,7 +31,7 @@ Pixel Tablet                                Home Assistant
 
 ## Entities
 
-Each paired tablet becomes one device with four entities:
+Each paired tablet becomes one device with five entities:
 
 | Entity | What it does |
 | --- | --- |
@@ -39,12 +39,27 @@ Each paired tablet becomes one device with four entities:
 | `event.<tablet>_alarm` | Fires on `alarm_fired` |
 | `sensor.<tablet>_last_timer` | Name of the most recent timer |
 | `sensor.<tablet>_last_alarm` | Name of the most recent alarm |
+| `button.<tablet>_stop_timer` | Presses Stop on a timer ringing on the tablet |
 
 The bus events `ha_android_timer_bridge_timer_finished` and `ha_android_timer_bridge_alarm_fired` are also
 fired, if you would rather trigger on those.
 
-A blueprint is included at `blueprints/automation/ha_android_timer_bridge/` for the common case of
-notifying phones.
+Two blueprints are included at `blueprints/automation/ha_android_timer_bridge/`:
+
+- `notify_when_timer_finishes.yaml` runs any action you like, usually a notification.
+- `notify_with_stop_button.yaml` sends a notification with a **Stop timer** button to phones
+  running the companion app, which also shows on an Apple Watch. Tapping it presses the
+  Stop button entity, which silences the timer from another room, and clears the
+  notification from the other phones.
+
+## Stopping a timer remotely
+
+Home Assistant calls `POST /stop` on the tablet with the pairing code, and the app presses
+the Stop button on the ringing Clock notification itself. Pressing that button is what stops
+the ringing; dismissing the notification would leave Clock's alarm sound playing. The app
+remembers the button from the last time the ringing notification was posted, so stopping
+works only for a timer the app has matched, and pressing the entity when nothing is ringing
+does nothing.
 
 ## Setup
 
