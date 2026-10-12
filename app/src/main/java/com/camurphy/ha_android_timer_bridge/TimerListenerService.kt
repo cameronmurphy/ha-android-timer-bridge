@@ -1,6 +1,7 @@
 package com.camurphy.ha_android_timer_bridge
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
@@ -11,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Watches the notification shade for a timer going off and forwards it to Home Assistant.
@@ -77,11 +79,13 @@ class TimerListenerService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         connected = false
+        stopButtons.clear()
         Log.w(TAG, "listener disconnected")
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         lastSent.remove(sbn.key)
+        stopButtons.remove(sbn.key)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -125,6 +129,12 @@ class TimerListenerService : NotificationListenerService() {
             return
         }
 
+        // Before the repeat check: the ringing notification re-posts as its clock ticks,
+        // and the latest post holds the button that is live.
+        if (match.kind == EventKind.TIMER) {
+            stopButton(sbn.notification)?.let { stopButtons[sbn.key] = it }
+        }
+
         val now = System.currentTimeMillis()
         val previous = lastSent[sbn.key]
         if (previous != null &&
@@ -160,6 +170,13 @@ class TimerListenerService : NotificationListenerService() {
             EventLog.updateStatus(this@TimerListenerService, event.id, status)
         }
     }
+
+    /** The ringing notification's own Stop (or Dismiss) button, if it has one. */
+    private fun stopButton(n: Notification): PendingIntent? =
+        n.actions?.firstOrNull { action ->
+            val title = action.title?.toString()?.trim()?.lowercase().orEmpty()
+            title == "stop" || title == "dismiss"
+        }?.actionIntent
 
     private fun snapshot(sbn: StatusBarNotification): NotificationSnapshot {
         val n = sbn.notification
@@ -309,6 +326,28 @@ class TimerListenerService : NotificationListenerService() {
         @Volatile
         var connected = false
             private set
+
+        /**
+         * Notification key -> the Stop button of a timer that is ringing right now.
+         *
+         * Pressing the app's own button is what silences it: cancelling the notification
+         * would leave Clock's ringing service playing, and Android will not let a listener
+         * cancel an ongoing notification anyway. Read from the pairing server's threads.
+         */
+        private val stopButtons = ConcurrentHashMap<String, PendingIntent>()
+
+        /** Press Stop on every timer that is ringing. Returns how many were stopped. */
+        fun stopRingingTimers(): Int {
+            var stopped = 0
+            for (key in stopButtons.keys) {
+                val button = stopButtons.remove(key) ?: continue
+                runCatching { button.send() }
+                    .onSuccess { stopped++ }
+                    .onFailure { Log.w(TAG, "could not press Stop: ${it.message}") }
+            }
+            Log.i(TAG, "stop requested, stopped $stopped")
+            return stopped
+        }
 
         /**
          * Ask the system to bind the listener again.

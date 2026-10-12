@@ -1,0 +1,131 @@
+blueprint:
+  name: Notify when a tablet timer finishes, with a Stop button
+  description: >-
+    Sends a notification to your phones whenever a timer finishes on a tablet running the
+    HA Android Timer Bridge app. The notification has a Stop timer button, also shown on
+    an Apple Watch, that silences the timer on the tablet. Once the timer is stopped from
+    one phone, the notification is cleared from the others.
+  domain: automation
+  input:
+    timer_entity:
+      name: Timer event entity
+      description: The Timer entity belonging to the tablet.
+      selector:
+        entity:
+          filter:
+            - integration: ha_android_timer_bridge
+              domain: event
+    stop_button:
+      name: Stop timer button
+      description: The Stop timer button belonging to the same tablet.
+      selector:
+        entity:
+          filter:
+            - integration: ha_android_timer_bridge
+              domain: button
+    notify_devices:
+      name: Phones to notify
+      description: Devices running the Home Assistant companion app.
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+    title:
+      name: Title
+      description: Use {{ timer_name }} for the timer's name.
+      default: "{{ timer_name }} is done"
+      selector:
+        text: {}
+    message:
+      name: Message
+      description: Use {{ timer_name }} for the timer's name.
+      default: "The timer on the tablet has finished."
+      selector:
+        text: {}
+    wait_minutes:
+      name: How long the Stop button works for
+      description: >-
+        After this long, tapping Stop does nothing. Clock gives up ringing on its own
+        eventually, so there is no need for this to be long.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+# Parallel, not queued: each run waits for a tap, and a second timer finishing must not
+# wait behind the first one's notification.
+mode: parallel
+max: 10
+
+variables:
+  timer_entity: !input timer_entity
+  stop_button: !input stop_button
+  notify_devices: !input notify_devices
+  timer_name: "{{ state_attr(timer_entity, 'timer_name') or 'Timer' }}"
+  # Unique per run, so a tap answers this timer's notification and no other.
+  stop_action: "STOP_TIMER_{{ context.id }}"
+  tag: "ha_android_timer_bridge_{{ context.id }}"
+  # The companion app's notify action is named after the device.
+  notify_actions: >-
+    {% set ns = namespace(actions=[]) %}
+    {% for device in notify_devices %}
+      {% set ns.actions = ns.actions + ['notify.mobile_app_' ~ device_attr(device, 'name') | slugify] %}
+    {% endfor %}
+    {{ ns.actions }}
+
+trigger:
+  - platform: state
+    entity_id: !input timer_entity
+
+condition:
+  # An event entity's state is the timestamp of the last event; ignore start-up churn.
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none
+         and trigger.to_state.state not in ['unknown', 'unavailable']
+         and trigger.from_state is not none
+         and trigger.from_state.state != trigger.to_state.state }}
+
+action:
+  - repeat:
+      for_each: "{{ notify_actions }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: !input title
+            message: !input message
+            data:
+              tag: "{{ tag }}"
+              push:
+                interruption-level: time-sensitive
+              actions:
+                - action: "{{ stop_action }}"
+                  title: Stop timer
+                  destructive: true
+
+  - wait_for_trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "{{ stop_action }}"
+    timeout:
+      minutes: !input wait_minutes
+    continue_on_timeout: false
+
+  - action: button.press
+    target:
+      entity_id: "{{ stop_button }}"
+
+  - repeat:
+      for_each: "{{ notify_actions }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            message: clear_notification
+            data:
+              tag: "{{ tag }}"

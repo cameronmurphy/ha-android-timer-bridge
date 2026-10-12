@@ -13,6 +13,16 @@ from homeassistant.helpers.entity import Entity
 from .const import CONF_DEVICE_ID, CONF_DEVICE_NAME, DOMAIN, KIND_TIMER, SIGNAL_TIMER
 
 
+def tablet_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """The device every entity of one tablet belongs to."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.data[CONF_DEVICE_ID])},
+        name=entry.data.get(CONF_DEVICE_NAME) or entry.title,
+        manufacturer="HA Android Timer Bridge",
+        model="Android tablet",
+    )
+
+
 class TimerBridgeEntity(Entity):
     """An entity fed by the events one tablet pushes over its webhook."""
 
@@ -22,13 +32,7 @@ class TimerBridgeEntity(Entity):
     def __init__(self, entry: ConfigEntry, kind: str) -> None:
         self._entry = entry
         self._kind = kind
-        device_id = entry.data[CONF_DEVICE_ID]
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=entry.data.get(CONF_DEVICE_NAME) or entry.title,
-            manufacturer="HA Android Timer Bridge",
-            model="Android tablet",
-        )
+        self._attr_device_info = tablet_device_info(entry)
 
     async def async_added_to_hass(self) -> None:
         """Listen for events forwarded by the webhook handler."""

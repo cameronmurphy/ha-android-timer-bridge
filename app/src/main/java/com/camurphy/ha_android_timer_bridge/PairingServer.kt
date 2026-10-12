@@ -19,12 +19,14 @@ import java.net.Socket
 /**
  * A very small HTTP server so Home Assistant can find and pair with this tablet.
  *
- * Three endpoints, JSON in and out:
- *   GET  /info    what this device is, and whether it is already paired
- *   POST /pair    {code, webhook_url, instance_name} — stores the webhook to post timers to
- *   POST /unpair  {code} — forgets it
+ * JSON in and out:
+ *   GET  /info         what this device is, and whether it is already paired
+ *   POST /pair         {code, webhook_url, instance_name} — stores the webhook to post timers to
+ *   POST /unpair       {code} — forgets it
+ *   POST /stop         {code} — presses Stop on any timer that is ringing
+ *   POST /diagnostics  {code, limit} — recent notifications, for troubleshooting
  *
- * It only ever accepts a webhook URL; it does not expose notifications or anything else.
+ * Everything but /info and /pair is behind the pairing code Home Assistant paired with.
  */
 class PairingServer(
     context: Context,
@@ -138,6 +140,7 @@ class PairingServer(
         method == "GET" && path == "/info" -> 200 to info()
         method == "POST" && path == "/pair" -> pair(body)
         method == "POST" && path == "/unpair" -> unpair(body)
+        method == "POST" && path == "/stop" -> stop(body)
         method == "POST" && path == "/diagnostics" -> diagnostics(body)
         else -> 404 to error("No such endpoint")
     }
@@ -178,6 +181,15 @@ class PairingServer(
         PairingStore.unpair(appContext)
         onPairingChanged()
         return 200 to info()
+    }
+
+    /** Silence whatever timer is ringing, so it can be stopped from another room. */
+    private fun stop(body: String): Pair<Int, JSONObject> {
+        val json = runCatching { JSONObject(body) }.getOrElse { JSONObject() }
+        if (json.optString("code") != PairingStore.current.pairingCode) {
+            return 403 to error("Pairing code does not match")
+        }
+        return 200 to JSONObject().put("stopped", TimerListenerService.stopRingingTimers())
     }
 
     /**
