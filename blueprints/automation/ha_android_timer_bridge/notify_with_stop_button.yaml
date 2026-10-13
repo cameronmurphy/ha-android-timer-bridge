@@ -65,9 +65,13 @@ variables:
   stop_button: !input stop_button
   notify_devices: !input notify_devices
   timer_name: "{{ state_attr(timer_entity, 'timer_name') or 'Timer' }}"
-  # Unique per run, so a tap answers this timer's notification and no other.
-  stop_action: "STOP_TIMER_{{ context.id }}"
-  tag: "ha_android_timer_bridge_{{ context.id }}"
+  # Unique per timer, so a tap answers this timer's notification and no other. An
+  # automation has no `context` variable (only scripts do), so take the id of the state
+  # change that triggered it. Variables render before the condition, so guard for the
+  # entity being removed.
+  run_id: "{{ trigger.to_state.context.id if trigger.to_state is not none else 'none' }}"
+  stop_action: "STOP_TIMER_{{ run_id }}"
+  tag: "ha_android_timer_bridge_{{ run_id }}"
   # The companion app's notify action is named after the device.
   notify_actions: >-
     {% set ns = namespace(actions=[]) %}
